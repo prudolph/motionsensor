@@ -1,0 +1,92 @@
+
+
+#root {
+  text-align: center;
+
+  width: 100vw;
+  height:100vh;
+  background-color: #ECECEC;
+  font-family: 'Noto Serif', serif;
+  
+}
+.container{
+  width: 80%;
+  height:100%;
+  margin:0 auto;
+}
+.message{
+  color:cadetblue
+}
+
+form{
+  background-color: gray;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  align-items: flex-start;
+ 
+}
+
+label{
+ 
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+
+  margin:1%;
+
+ 
+}
+input{
+  width: 200px;
+}
+
+.controls{
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height:10%;
+
+  background-color: #F3D250;
+  
+  
+}
+button{
+  height:60%;
+  border-radius: 2px;
+border-width:1px;
+outline: none;
+background-color: #ECECEC;
+color:black;
+font-family: 'Noto Serif', serif;
+}
+
+.dateEntry{
+
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  height:20%;
+  background-color:#FC8888;
+  margin:10% 0;
+  width: 100%;
+
+}
+
+.feedDatesContainer {
+  border-radius: 12.5px;
+}
+
+.feedDate{
+  display: flex;
+justify-content: space-evenly;
+align-content: center;
+background-color: #90ccf4;
+  margin:10px;
+  height:50px;;
+  
+  color:whitesmoke;
+
+}
+
+
