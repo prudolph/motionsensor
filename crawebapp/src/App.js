@@ -22,9 +22,6 @@ class App extends React.Component {
       config:{
         s:"",
         p: "",
-        asm: 10,
-        asd: 10,
-        atg: 2.0,
         cc: "",
         cn: "",
         e:""
@@ -45,10 +42,13 @@ class App extends React.Component {
     return new Promise(async (resolve, reject) => {
       try {
         const response = await axios.get('/getconfig')
-        console.log("CONFIG RESPONSE: ", response)
-        const configData = response.data
+
+        let configData = response.data
+        console.log("CONFIG RESPONSE: ", configData)
+        let cellinfo = configData.e.split("@")
+        configData.cn =cellinfo[0];
+        configData.cc =cellinfo[1];
         resolve(configData);
-        this.setState({message:"Config Received"})
       }
       catch (error) {
         reject(error);
@@ -61,6 +61,9 @@ class App extends React.Component {
       console.log("Submiting Confing: ",this.state.config)
       try {
         let configForUpload = this.state.config;
+        delete configForUpload.cn;
+        delete configForUpload.cc;
+
         console.log("configForUpload: ", configForUpload );
         const response = await axios.post('/setconfig',configForUpload)
         const resultData = response.data.result
@@ -76,7 +79,7 @@ class App extends React.Component {
     console.log("Handle Event : ", event.target)
     let updatedState = {...this.state}
     updatedState.config[event.target.name] = event.target.value;
-    updatedState.config["e"] = `${updatedState.config.cell_number}@${updatedState.config.cell_carrier}`
+    updatedState.config["e"] = `${updatedState.config.cn}@${updatedState.config.cc}`
     
     this.setState( updatedState);
   }
@@ -101,23 +104,6 @@ class App extends React.Component {
         Wifi Password:
           <input type="password" name="p" value={this.state.config.p} onChange={this.handleChange} />
       </label>
-
-
-      <label>
-        Movement Samples(How many times it checks movement):
-          <input type="number" name="asm"  value={this.state.config.asm} onChange={this.handleChange} />
-      </label>
-
-      <label>
-        Movement Sample Interval(How much time in between each movement check):
-          <input type="number" name="asd" value={this.state.config.asd} onChange={this.handleChange} />
-      </label>
-
-      <label>
-        Movemnt Threshold (How much movement is needed to trigger)
-          <input type="number" name="atg" value={this.state.config.atg} onChange={this.handleChange} />
-      </label>
-
       <label>
         Cell Phone Number
           <input type="text" name="cn" value={this.state.config.cn} onChange={this.handleChange} />
@@ -161,11 +147,11 @@ class App extends React.Component {
       const configResults = await this.getConfig();
       console.log("Got Config: ", configResults);
     
-      const { cell_carrier,cell_number,password,sms_email,ssid,accel_samples_max,accel_samples_delay_s,accel_threshold_gs} = configResults
+      const { cc,cn,p,e,s,asm,asd,atg} = configResults
       if(configResults){
         this.setState({
           configRetreived: true,
-          config:{cell_carrier,cell_number,password,sms_email,ssid,accel_samples_max,accel_samples_delay_s,accel_threshold_gs}
+          config:{cc,cn,p,e,s,asm,asd,atg}
         })
       }
     }

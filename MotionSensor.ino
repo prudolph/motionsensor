@@ -22,16 +22,16 @@ WebServer server(80);
 const int BUTTON_PIN = 27;
 const int VIBRATION_PIN =  15;
 const int ACCEL_PWR_PIN =  21;
-
-
-int ACCEL_SAMPLES_MAX = 10;
-int ACCEL_SAMPLES_DELAY = 10;
-int ACCEL_THRESHHOLD_GS = 2;
+//
+//int ACCEL_SAMPLES_MAX = 10;
+//int ACCEL_SAMPLES_DELAY = 10;
+//int ACCEL_THRESHHOLD_GS = 2;
 
 //admin password
 const char* www_username = "admin";
 const char* www_password = "esp32";
 
+const int wifiRetryLimit = 10;
 //wifi settings
 char* ssid     = "";
 char* password = "";
@@ -71,22 +71,29 @@ char* sms_email = "";
 
 void setup()
 {
-  Serial.begin(115200);
-  delay(500); //delay to bring up serial monitor
-
   pinMode(ACCEL_PWR_PIN, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT);
-
   digitalWrite(LED_BUILTIN, HIGH);
+  
+
+  Serial.begin(115200);
+  delay(1000); //delay to bring up serial monitor
 
   if (!SPIFFS.begin()) {
     Serial.println("An Error has occurred while mounting SPIFFS");
   }
-
   unpackConfig();
 
-  /*
+  
+  if (touchRead(BUTTON_PIN) == 0) {
+    WiFi.softAP("MotionSensor");
+    IPAddress myIP = WiFi.softAPIP();
+    Serial.println(myIP);
+    startServer();
+  } else {
+
+/*
     First we configure the wake up source
     We set our ESP32 to wake up for an external trigger.
     There are two types for ESP32, ext0 and ext1 .
@@ -96,45 +103,51 @@ void setup()
     Note that using internal pullups/pulldowns also requires
     RTC peripherals to be turned on.
   */
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_15, 0); //1 = High, 0 = Low
-
-
-
-
-  if (touchRead(BUTTON_PIN) != 0) {
-
-    WiFi.softAP("MotionSensor");
-    IPAddress myIP = WiFi.softAPIP();
-    Serial.println(myIP);
-    startServer();
+   
     
-  } else {
-
-
-    bool movementTriggered = sampleAcceleromter();
-    if (movementTriggered) {
+    //bool movementTriggered = sampleAccel();
+    Serial.println(F("CHECKING MOVEMENT"));
+    bool orientationChanged = checkOrientationChanged();
+    if (orientationChanged) {
       //connect to wifi
       WiFi.begin(ssid, password);
+
+      int tryCnt=0;
       while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
+        delay(300);
         Serial.print(".");
+
+        
+        if(tryCnt>wifiRetryLimit){
+          break; 
+         }else{
+          tryCnt++;
+         }
       }
-      sendNotification();
+      
+      if(WiFi.status() == WL_CONNECTED){
+        sendNotification();
+       }else{
+        Serial.println(F("Failed to connect to Wifi---Sleeping"));
+       }
+      
     }
 
     //Go to sleep
-    Serial.println(F("Sleeping"));
-    //esp_deep_sleep_start();
+    Serial.println(F("---Sleeping"));
+  
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_15, 0); //1 = High, 0 = Low
+  
+    esp_deep_sleep_start();
     digitalWrite(LED_BUILTIN, LOW);
   }
 }
 
 void unpackConfig() {
-  StaticJsonDocument<200> doc;
+  StaticJsonDocument<256> doc;
 
   //GetConfig data
   String configData = readFile(SPIFFS, "/config.json");
-  Serial.print("ConfigData: ");
   Serial.println(configData);
 
   // Deserialize the JSON document
@@ -149,31 +162,30 @@ void unpackConfig() {
 
 
 
-  const char* config_ssid             = doc[F("ssid")];
-  const char* config_password            = doc[F("password")];
-  int         config_ACCEL_SAMPLES_MAX   = doc[F("accel_samples_max")];
-  int         config_ACCEL_SAMPLES_DELAY = doc[F("accel_samples_delay_s")];
-  int         config_ACCEL_THRESHHOLD_GS = doc[F("accel_threshold_gs")];
-  const char* config_sms_email           = doc[F("sms_email")];
-
-  ACCEL_SAMPLES_MAX = config_ACCEL_SAMPLES_MAX;
-  ACCEL_SAMPLES_DELAY = config_ACCEL_SAMPLES_DELAY;
-  ACCEL_THRESHHOLD_GS = config_ACCEL_THRESHHOLD_GS;
+  const char* config_ssid                = doc[F("s")];
+  const char* config_password            = doc[F("p")];
+  const char* config_sms_email           = doc[F("e")];
 
   ssid = copy(config_ssid);
   password = copy(config_password);
   sms_email = copy(config_sms_email);
 
+//  int         config_ACCEL_SAMPLES_MAX   = doc[F("asm")];
+//  int         config_ACCEL_SAMPLES_DELAY = doc[F("asd")];
+//  float         config_ACCEL_THRESHHOLD_GS = doc[F("atg")];
+//
+//  ACCEL_SAMPLES_MAX   = config_ACCEL_SAMPLES_MAX;
+//  ACCEL_SAMPLES_DELAY = config_ACCEL_SAMPLES_DELAY*1000;
+//  ACCEL_THRESHHOLD_GS = config_ACCEL_THRESHHOLD_GS;
 
-/*
-              // Print values.
-              Serial.println("UNPACKING CONFIG");
-  Serial.printf("SSID: %s\r\n", ssid);
-  Serial.printf("ACCEL_SAMPLES_MAX: %s\r\n", ACCEL_SAMPLES_MAX);
-  Serial.printf("ACCEL_SAMPLES_DELAY: %s\r\n", ACCEL_SAMPLES_DELAY);
-  Serial.printf("ACCEL_THRESHHOLD_GS: %s\r\n", ACCEL_THRESHHOLD_GS);
-  Serial.printf("sms_email: %s\r\n", sms_email);
-  */
+
+  
+  // Print values.
+//  Serial.println("UNPACKING CONFIG");
+//  Serial.printf("SSID: %s\r\n", ssid);
+//  Serial.printf("PASS: %s\r\n", password);
+//  Serial.printf("sms_email: %s\r\n", sms_email);
+  
 }
 
 char* copy(const char* orig) {
@@ -183,23 +195,7 @@ char* copy(const char* orig) {
 }
 ///////////////////SERVER
 
-void handleNotFound() {
-  String message = "File Not Found\n\n";
-  message += "URI: ";
-  message += server.uri();
-  message += "\nMethod: ";
-  message += (server.method() == HTTP_GET) ? F("GET") : F("POST");
-  message += "\nArguments: ";
-  message += server.args();
-  message += "\n";
 
-  for (uint8_t i = 0; i < server.args(); i++) {
-    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-  }
-
-  server.send(404, F("text/plain"), message);
-
-}
 
 String getContentType(String filename) { // convert the file extension to the MIME type
   if (filename.endsWith(F(".html"))) return F("text/html");
@@ -223,35 +219,43 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
 
 
 void startServer() {
-  Serial.println("Starting Server....");
-
-
+  Serial.println(F("Starting Server...."));
   server.on("/", []() {
     if (!server.authenticate(www_username, www_password)) {
       return server.requestAuthentication();
     }
     handleFileRead("/index.html");
-    //server.send(200, "text/plain", "Login OK");
   });
-
-//  
-//  server.on("/", []() {
-//    
-//  });
+  
 
   server.on("/getconfig", []() {
     String configData = readFile(SPIFFS, "/config.json");
+    Serial.print("Getting config:");
+    Serial.println(configData);
     server.send(200, F("text/json"), configData);
   });
 
   server.on("/setconfig", []() {
     String newConfigData = server.arg(0);
+    Serial.print("Setting config:");
+    Serial.println(newConfigData );
+    
     writeFile(SPIFFS, "/config.json", newConfigData.c_str() );
+
+    //Set a new Default Orientation
+    String defaultOrientation = getSensorOrientation();
+    writeFile(SPIFFS, "/orientation.txt", defaultOrientation.c_str() );
+    
+    
     server.send(200, F("text/plain"), F("Settings Saved"));
   });
 
 
-  server.onNotFound(handleNotFound);
+  server.onNotFound([](){
+      server.send(404, F("text/plain"), "NotFound");
+    });
+
+    
   server.begin();
 }
 
@@ -281,61 +285,58 @@ void writeFile(fs::FS &fs, const char * path, const char * message) {
   if (file.print(message)) {
     Serial.println(F("- file written"));
   } else {
-    Serial.println(F("- frite failed"));
+    Serial.println(F("- write failed"));
   }
 }
 
 
-bool sampleAcceleromter() {
-
-  //Power On Accelerometer
-  digitalWrite(ACCEL_PWR_PIN, HIGH);
-  delay(100);
-  //Connect to accelerometer
-  if (! mma.begin()) {
-    Serial.println(F("Couldnt start Accelerometer"));
-    while (1);
-  }
-
-  mma.setRange(MMA8451_RANGE_2_G);
-
-  bool isActivated = false;
-
-  for (int sample = 0; sample <= ACCEL_SAMPLES_MAX; sample++) {
-    /* Get a new sensor event */
-    sensors_event_t event;
-    mma.getEvent(&event);
-
-    float xGs = abs(event.acceleration.x / MS2_TO_GS);
-    float yGs = abs(event.acceleration.y / MS2_TO_GS);
-    float zGs = abs(event.acceleration.z / MS2_TO_GS);
-
-    /* Display the results (acceleration is measured in m/s^2) 
-    Serial.print("X: \t"); Serial.print(xGs); Serial.print("\t");
-    Serial.print("Y: \t"); Serial.print(yGs); Serial.print("\t");
-    Serial.print("Z: \t"); Serial.print(zGs); Serial.print("\t");
-    Serial.println();
-    */
-
-    if ( xGs >= ACCEL_THRESHHOLD_GS ||
-         yGs >= ACCEL_THRESHHOLD_GS ||
-         zGs >= ACCEL_THRESHHOLD_GS ) {
-      isActivated = true;
-      break;
-    }
-    delay(250);
-  }
-
-  digitalWrite(ACCEL_PWR_PIN, LOW);
-  return isActivated;
-}
+//bool sampleAccel() {
+//Serial.println(F("Sampling Accelerometer"));
+//  //Power On Accelerometer
+//  digitalWrite(ACCEL_PWR_PIN, HIGH);
+//  delay(100);
+//  //Connect to accelerometer
+//  if (! mma.begin()) {
+//    Serial.println(F("Couldnt start Accelerometer"));
+//    while (1);
+//  }
+//
+//  mma.setRange(MMA8451_RANGE_2_G);
+//
+//  bool isActivated = false;
+//
+//  for (int sample = 0; sample <= ACCEL_SAMPLES_MAX; sample++) {
+//    /* Get a new sensor event */
+//    sensors_event_t event;
+//    mma.getEvent(&event);
+//
+//    float xGs = abs(event.acceleration.x / MS2_TO_GS);
+//    float yGs = abs(event.acceleration.y / MS2_TO_GS);
+//    float zGs = abs(event.acceleration.z / MS2_TO_GS);
+//
+//    /* Display the results (acceleration is measured in m/s^2) 
+//    Serial.print("X: \t"); Serial.print(xGs); Serial.print("\t");
+//    Serial.print("Y: \t"); Serial.print(yGs); Serial.print("\t");
+//    Serial.print("Z: \t"); Serial.print(zGs); Serial.print("\t");
+//    Serial.println();
+//    */
+//
+//    if ( xGs >= ACCEL_THRESHHOLD_GS ||
+//         yGs >= ACCEL_THRESHHOLD_GS ||
+//         zGs >= ACCEL_THRESHHOLD_GS ) {
+//      isActivated = true;
+//      break;
+//    }
+//    delay(ACCEL_SAMPLES_DELAY);
+//  }
+//
+//  digitalWrite(ACCEL_PWR_PIN, LOW);
+//  return isActivated;
+//}
 
 
 
 void sendNotification( ) {
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
   // Preparing email
   Serial.println(F("Preparing Email"));
   SMTPData smtpData;
@@ -354,7 +355,10 @@ void sendNotification( ) {
   // Set the email message in HTML format
   //smtpData.setMessage("<h2>Photo captured with ESP32-CAM and attached in this email.</h2>", true);
   // Set the email message in text format
-  smtpData.setMessage(F("Motion Detected"), false);
+  bool batteryLow = isBatteryLow();
+  String message = batteryLow?F("Door Opened Detected -- Battery Low"):F("Door Opened Detected");
+  
+  smtpData.setMessage(message, false);
 
   // Add recipients, can add more than one recipient
   smtpData.addRecipient(sms_email);
@@ -372,12 +376,7 @@ void sendNotification( ) {
   if (!MailClient.sendMail(smtpData)) {
     Serial.println("Error sending Email, " + MailClient.smtpErrorReason());
   }
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
-  digitalWrite(LED_BUILTIN, HIGH);
+
   // Clear all data from Email object to free memory
   smtpData.empty();
 }
@@ -388,7 +387,81 @@ void sendCallback(SendStatus msg) {
   Serial.println(msg.info());
 }
 
+bool isBatteryLow(){
+  int batteryVoltageRaw = analogRead(A13);
 
+  int batteryVoltage=(batteryVoltageRaw*2);
+  Serial.print("batteryVoltage: ");
+  Serial.println(batteryVoltage);
+  return batteryVoltage <= 3700;
+}
+
+bool checkOrientationChanged(){
+  bool sensorChanged=false;
+  String defaultOrientation = readFile(SPIFFS, "/orientation.txt");
+  bool orientationChanged = false;
+  
+   for (int i = 0; i<= 3; i++) {
+      String currentOrientation = getSensorOrientation();
+      Serial.print("Default Orientation :");
+      Serial.println(defaultOrientation);
+      
+      Serial.print("current Orientation : ");
+      Serial.println(currentOrientation);
+      orientationChanged = !defaultOrientation.equals(currentOrientation); 
+    
+      if(orientationChanged)  break;
+      else                    delay(1000);
+     }
+      
+  
+  return orientationChanged;
+}
+
+String getSensorOrientation(){
+   //Power On Accelerometer
+  digitalWrite(ACCEL_PWR_PIN, HIGH);
+  delay(100);
+  //Connect to accelerometer
+  if (! mma.begin()) {
+    Serial.println(F("Couldnt start Accelerometer"));
+    while (1);
+  }
+  delay(100);
+  
+  String currentOrientation="";
+  uint8_t o = mma.getOrientation();
+  switch (o) {
+    case MMA8451_PL_PUF: 
+      currentOrientation="portrait_up_front";
+      break;
+    case MMA8451_PL_PUB: 
+      currentOrientation="portraitup_back";
+      break;    
+    case MMA8451_PL_PDF: 
+      currentOrientation="portrait_down_front";
+      break;
+    case MMA8451_PL_PDB: 
+      currentOrientation="portrait_down_back";
+      break;
+    case MMA8451_PL_LRF: 
+      currentOrientation="landscape_right_front";
+      break;
+    case MMA8451_PL_LRB: 
+      currentOrientation="landscape_right_back";
+      break;
+    case MMA8451_PL_LLF: 
+      currentOrientation="landscape_left_front";
+      break;
+    case MMA8451_PL_LLB: 
+      currentOrientation="landscape_left_back";
+      break;
+    }
+
+    
+  digitalWrite(ACCEL_PWR_PIN, LOW);
+  return  currentOrientation;
+ }
 
 
 void loop()
